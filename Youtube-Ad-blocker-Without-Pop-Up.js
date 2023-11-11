@@ -9,99 +9,184 @@
 // @grant        none
 // ==/UserScript==
 
-(function() {
-    'use strict';
-
-    // Configuration options
-    const config = {
-        adblockerEnabled: true,
-        removePopupEnabled: true,
-        debugEnabled: true
-    };
-
+(function()
+ {
     
-    const debugLog = (message) => {
-        if (config.debugEnabled) console.log(`[YT Enhancer]: ${message}`);
+    const adblocker = true;
+    const removePopup = true;
+    const debug = true;
+    const domainsToRemove = [
+        '*.youtube-nocookie.com/*'
+    ];
+    const jsonPathsToRemove = [
+        'playerResponse.adPlacements',
+        'playerResponse.playerAds',
+        'adPlacements',
+        'playerAds',
+        'playerConfig',
+        'auxiliaryUi.messageRenderers.enforcementMessageViewModel'
+    ];
+
+    const observerConfig = {
+        childList: true,
+        subtree: true
     };
 
-    // Remove specific JSON paths from YouTube responses
-    const removeJSONPaths = (jsonPaths) => {
-        jsonPaths.forEach((path) => {
+    const keyEvent = new KeyboardEvent("keydown", {
+      key: "k",
+      code: "KeyK",
+      keyCode: 75,
+      which: 75,
+      bubbles: true,
+      cancelable: true,
+      view: window
+    });
+
+    let mouseEvent = new MouseEvent("click", {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+    });
+
+    let unpausedAfterSkip = 0;
+
+    if (debug) console.log("Remove Adblock Thing: Script started");
+    // Old variable but could work in some cases
+    window.__ytplayer_adblockDetected = false;
+
+    if(adblocker) addblocker();
+    if(removePopup) popupRemover();
+    if(removePopup) observer.observe(document.body, observerConfig);
+
+    // Remove Them pesski popups
+    function popupRemover() {
+        removeJsonPaths(domainsToRemove, jsonPathsToRemove);
+        setInterval(() => {
+
+            const fullScreenButton = document.querySelector(".ytp-fullscreen-button");
+            const modalOverlay = document.querySelector("tp-yt-iron-overlay-backdrop");
+            const popup = document.querySelector(".style-scope ytd-enforcement-message-view-model");
+            const popupButton = document.getElementById("dismiss-button");
+            // const popupButton2 = document.getElementById("ytp-play-button ytp-button");
+
+            const video1 = document.querySelector("#movie_player > video.html5-main-video");
+            const video2 = document.querySelector("#movie_player > .html5-video-container > video");
+
+            const bodyStyle = document.body.style;
+
+            bodyStyle.setProperty('overflow-y', 'auto', 'important');
+
+            if (modalOverlay) {
+                modalOverlay.removeAttribute("opened");
+                modalOverlay.remove();
+            }
+
+            if (popup) {
+                if (debug) console.log("Disabling Adblock Feature: Popup identified, proceeding with removal...");
+
+                if(popupButton) popupButton.click();
+                // if(popupButton2) popupButton2.click();
+                popup.remove();
+                unpausedAfterSkip = 2;
+
+                fullScreenButton.dispatchEvent(mouseEvent);
+              
+                setTimeout(() => {
+                  fullScreenButton.dispatchEvent(mouseEvent);
+                }, 500);
+
+                if (debug) console.log("Disable Adblock Component: Popup successfully Removed");
+            }
+
+            if (!unpausedAfterSkip > 0) return;
+
+            // UnPause The Video
+            unPauseVideo(video1);
+            unPauseVideo(video2);
+
+        }, 1000);
+    }
+    function addblocker()
+    {
+        setInterval(() =>
+                    {
+            const skipBtn = document.querySelector('.videoAdUiSkipButton,.ytp-ad-skip-button');
+            const ad = [...document.querySelectorAll('.ad-showing')][0];
+            const sidAd = document.querySelector('ytd-action-companion-ad-renderer');
+            const displayAd = document.querySelector('div#root.style-scope.ytd-display-ad-renderer.yt-simple-endpoint');
+            const sparklesContainer = document.querySelector('div#sparkles-container.style-scope.ytd-promoted-sparkles-web-renderer');
+            const mainContainer = document.querySelector('div#main-container.style-scope.ytd-promoted-video-renderer');
+            const feedAd = document.querySelector('ytd-in-feed-ad-layout-renderer');
+            const mastheadAd = document.querySelector('.ytd-video-masthead-ad-v3-renderer');
+            const sponsor = document.querySelectorAll("div#player-ads.style-scope.ytd-watch-flexy, div#panels.style-scope.ytd-watch-flexy");
+            const nonVid = document.querySelector(".ytp-ad-skip-button-modern");
+
+            if (ad)
+            {
+                const video = document.querySelector('video');
+                video.playbackRate = 10;
+                video.volume = 0;
+                video.currentTime = video.duration;
+                skipBtn?.click();
+            }
+
+            sidAd?.remove();
+            displayAd?.remove();
+            sparklesContainer?.remove();
+            mainContainer?.remove();
+            feedAd?.remove();
+            mastheadAd?.remove();
+            sponsor?.forEach((element) => {
+                 if (element.getAttribute("id") === "panels") {
+                    element.childNodes?.forEach((childElement) => {
+                      if (childElement.data.targetId && childElement.data.targetId !=="engagement-panel-macro-markers-description-chapters")
+                          //Skipping the Chapters section
+                            childElement.remove();
+                          });
+                       } else {
+                           element.remove();
+                       }
+             });
+            nonVid?.click();
+        }, 50)
+    }
+    function unPauseVideo(video)
+    {
+        if (!video) return;
+        if (video.paused) {
+            document.dispatchEvent(keyEvent);
+            unpausedAfterSkip = 0;
+            if (debug) console.log("Adblock Component Removed: Resumed video playback with 'P' key");
+        } else if (unpausedAfterSkip > 0) unpausedAfterSkip--;
+    }
+    function removeJsonPaths(domains, jsonPaths)
+    {
+        const currentDomain = window.location.hostname;
+        if (!domains.includes(currentDomain)) return;
+
+        jsonPaths.forEach(jsonPath => {
+            const pathParts = jsonPath.split('.');
             let obj = window;
-            path.split('.').forEach((part) => {
+            let previousObj = null;
+            let partToSetUndefined = null;
+        
+            for (const part of pathParts) {
                 if (obj.hasOwnProperty(part)) {
-                    delete obj[part];
+                    previousObj = obj;
+                    partToSetUndefined = part; 
                     obj = obj[part];
+                } else {
+                    break; 
                 }
-            });
-        });
-    };
-
-   
-    const handleAds = () => {
-        const selectors = {
-            skipButton: '.videoAdUiSkipButton, .ytp-ad-skip-button',
-            adOverlay: '.ad-showing',
-            sidebarAd: 'ytd-action-companion-ad-renderer',
-            displayAd: '#root.style-scope.ytd-display-ad-renderer',
-            sparklesAd: '#sparkles-container.style-scope.ytd-promoted-sparkles-web-renderer',
-            videoAd: 'ytd-promoted-video-renderer',
-            feedAd: 'ytd-in-feed-ad-layout-renderer',
-            mastheadAd: '.ytd-video-masthead-ad-v3-renderer',
-            sponsorSection: 'div#player-ads.style-scope.ytd-watch-flexy, div#panels.style-scope.ytd-watch-flexy',
-            nonVideoAd: '.ytp-ad-skip-button-modern'
-        };
-
-        // Skip ads
-        const skipAd = () => {
-            const skipBtn = document.querySelector(selectors.skipButton);
-            if (skipBtn) skipBtn.click();
-        };
-
-        // Remove ad elements
-        const removeAdElements = () => {
-            Object.values(selectors).forEach((selector) => {
-                document.querySelectorAll(selector).forEach((el) => el.remove());
-            });
-        };
-
-        skipAd();
-        removeAdElements();
-    };
-
-    
-    const handlePopups = () => {
-        const popupSelectors = [
-            'tp-yt-iron-overlay-backdrop',
-            '.style-scope ytd-enforcement-message-view-model',
-            '#dismiss-button'
-        ];
-
-        popupSelectors.forEach((selector) => {
-            const element = document.querySelector(selector);
-            if (element) {
-                element.click ? element.click() : element.remove();
-                debugLog('Popup removed.');
+            }
+        
+            if (previousObj && partToSetUndefined !== null) {
+                previousObj[partToSetUndefined] = undefined;
             }
         });
-    };
-
-    
-    const main = () => {
-        if (config.adblockerEnabled) handleAds();
-        if (config.removePopupEnabled) handlePopups();
-    };
-
-    
-    main();
-    setInterval(main, 1000);
-
-    
-    if (config.removePopupEnabled) {
-        const observer = new MutationObserver(main);
-        observer.observe(document.body, { childList: true, subtree: true });
     }
-
-    
-    window.YTEnhancer = { debugLog, config };
+    const observer = new MutationObserver(() =>
+    {
+        removeJsonPaths(domainsToRemove, jsonPathsToRemove);
+    });
 })();
